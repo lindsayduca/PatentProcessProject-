@@ -1,0 +1,100 @@
+---
+title: "PatentProj"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(caret)
+library(MASS)
+```
+
+```{r}
+dir = '/Users/lindsayduca/Desktop'
+setwd(dir)
+patents <- read.csv("dataframe.csv")
+
+patents <- patents %>%
+  rename(applicationNumber = patentCaseMetadata.applicationNumberText.value,
+         approvalStatus = patentCaseMetadata.applicationStatusCategory,
+         patentType = patentCaseMetadata.applicationTypeCategory,
+         businessType = patentCaseMetadata.businessEntityStatusCategory,
+         firstInventorIndicator = patentCaseMetadata.firstInventorToFileIndicator,
+         filingDate = patentCaseMetadata.filingDate,
+         statusDate = patentCaseMetadata.applicationStatusDate,
+         groupArtUnit = patentCaseMetadata.groupArtUnitNumber.value,
+         inventionTitle = patentCaseMetadata.inventionTitle.content)
+```
+
+```{r}
+patentsNew <- patents %>%
+  mutate(Approved= ifelse(approvalStatus == 'Sent to Classification contractor', 1, 0))
+# Load the data and remove NAs
+patentsNew <- na.omit(patentsNew)
+```
+
+```{r}
+# Inspect the data
+summary(patentsNew)
+plot(patentsNew)
+```
+
+```{r}
+ggplot(data = patentsNew) +
+  geom_bar(mapping = aes(x = ))
+```
+
+```{r}
+# Split the data into training and test set
+set.seed(123)
+training.samples <- patentsNew$Approved %>% 
+    createDataPartition(p = 0.8, list = FALSE)
+
+train.data  <- patentsNew$Approved[training.samples,]
+test.data <- patentsNew$Approved[-training.samples,]
+```
+
+```{r}
+
+patentLog <- patentsNew[, c('patentType', 'businessType', 'firstInventorIndicator', 'Approved')]
+# Fit the model
+model <- glm(Approved ~., data = patentLog, family = binomial) 
+
+summary(model)
+```
+
+
+```{r}
+# Predict the probability (p) of diabete positivity
+probabilities <- predict(model, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, "pos", "neg")
+head(predicted.classes)
+
+
+# Select only numeric predictors
+mydata <- patentsNew %>%
+  dplyr::select_if(is.numeric) 
+predictors <- colnames(mydata)
+# Bind the logit and tidying the data for plot
+mydata <- mydata %>%
+  mutate(logit = log(probabilities/(1-probabilities))) %>%
+  gather(key = "predictors", value = "predictor.value", -logit)
+
+ggplot(mydata, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(method = "loess") + 
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_y")
+
+plot(model, which = 4, id.n = 3)
+```
+```{r}
+library(car)
+vif(model)
+```

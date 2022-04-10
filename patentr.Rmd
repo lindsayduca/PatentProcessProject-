@@ -1,0 +1,52 @@
+---
+title: "PatentR"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(patentr)
+library(tibble)    # for the tibble data containers
+library(magrittr)  # for the pipe (%>%) operator
+library(dplyr)     # to work with patent data
+library(lubridate) # to work with dates
+```
+
+```{r}
+# acquire data from USPTO using patentR package function
+get_bulk_patent_data(
+  year = rep(2020, 2),            # each week must have a corresponding year
+  week = 1:2)                     # each week corresponds element-wise to a year
+
+# import data into R
+patent_data <- read.csv("temp_output.csv") %>%
+  as_tibble() %>%
+  mutate(App_Date = as_date(App_Date),
+         Issue_Date=as_date(Issue_Date))
+
+
+```
+```{r}
+tail(patent_data)
+str(patent_data)
+plot(patent_data)
+```
+```{r}
+# calculate time from application to issue (in days)
+lag_time <- patent_data %>%
+  transmute(Lag = Issue_Date - App_Date) %>%
+  pull(Lag) %>%
+  as.numeric
+
+# get quantitative summary
+summary(lag_time)
+
+# plot as histogram
+hist(lag_time,
+     main = "Histogram of delay before issue",
+     xlab = "Time (days)", ylab = "Count")
+```
+
