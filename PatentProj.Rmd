@@ -13,10 +13,32 @@ library(tidyverse)
 library(readr)
 library(caret)
 library(MASS)
+library(ISLR)
+library(tidyverse)
+library(knitr)
+library(readr)
+library(regclass)
+library(caret)
+library(MLmetrics)
+library(Metrics)
+library(tree)
+library(VIF)
+library(cvms)
+library(tibble)   
+library(gtsummary)
+library(PerformanceAnalytics)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(jtools)
+library(ggstance)
+library(gtsummary)
+library(corrplot)
+set.seed(1)
 ```
 
 ```{r}
-dir = '/Users/lindsayduca/Desktop'
+dir = '/Users/lindsayduca/Desktop/PatentProj'
 setwd(dir)
 patents <- read.csv("dataframe.csv")
 
@@ -30,15 +52,49 @@ patents <- patents %>%
          statusDate = patentCaseMetadata.applicationStatusDate,
          groupArtUnit = patentCaseMetadata.groupArtUnitNumber.value,
          inventionTitle = patentCaseMetadata.inventionTitle.content)
+
+# R adding a column to dataframe based on values in other columns:
+patents <- patents %>% 
+  mutate(approvalStatus = case_when(
+    approvalStatus == "Non-Final Action Mailed" ~ 0, approvalStatus == "Non Final Action Mailed" ~ 0, approvalStatus == "Determination - Reexamination Ordered" ~ 0, approvalStatus == "Docketed New Case - Ready for Examination" ~ 1,  approvalStatus == "Sent to Classification contractor" ~ 0, approvalStatus == "Application Undergoing Preexam Processing" ~ 0, approvalStatus == "Application Dispatched from Preexam, Not Yet Docketed"~0)) 
+
+patents <- na.omit(patents)
+
+patents <-patents %>%
+  mutate(ApplicationTime = as.numeric((difftime(statusDate, filingDate, units = 'days'))))
 ```
 
 ```{r}
-patentsNew <- patents %>%
-  mutate(Approved= ifelse(approvalStatus == 'Sent to Classification contractor', 1, 0))
-# Load the data and remove NAs
-patentsNew <- na.omit(patentsNew)
+patentsNew <- select(patents,- c("inventionTitle", "X", "applicationNumber", "filingDate", "statusDate", groupArtUnit))
+patentsNew <- patentsNew %>% distinct()
+patentsNew$patentType <- as.factor(patentsNew$patentType)
 ```
 
+```{r}
+numPatents <- patentsNew %>%
+  mutate(patentType = case_when(
+    patentType == "Utility" ~ 0, 
+    patentType == "Design" ~ 1, 
+    patentType == "Plant" ~ 2, 
+    patentType == "Re-Issue" ~ 3))
+
+
+numPatents <- numPatents %>%
+  mutate(businessType = case_when(
+    businessType == "UNDISCOUNTED" ~ 2,
+    businessType == "SMALL" ~1,
+    businessType == "MICRO" ~ 0 )) 
+
+numPatents <- numPatents %>%
+  mutate(firstInventorIndicator = case_when(
+   firstInventorIndicator == "true" ~ 1,
+   firstInventorIndicator == "false" ~ 0))
+
+numPatents <- na.omit(numPatents)
+
+```
+
+ 
 ```{r}
 # Inspect the data
 summary(patentsNew)
@@ -46,55 +102,87 @@ plot(patentsNew)
 ```
 
 ```{r}
-ggplot(data = patentsNew) +
-  geom_bar(mapping = aes(x = ))
+ggplot(data = patentsNew, aes(x = Approval)) +
+  geom_bar(mapping = aes(x = approvalStatus), width = 0.5, fill = "steelblue") +
+  theme_minimal() + 
+  labs(title = "Patent Approval Distribution", y = "Number of Applications") + 
+  ylim(0, 290)
+
 ```
+``````{r}
+numPatents <- as.matrix(numPatents)
+
+correlations <- cor(numPatents)
+corrplot(correlations)
+
+
+```
+
+
+```{r}
+heatmap(numPatents)
+
+
+
+
+
+```{r}
+#logistic regression model
+logit <- glm(Approval ~ patentType + firstInventorIndicator + businessType + ApplicationTime, data=patentsNew, family='binomial')
+summary(logit)
+```
+```{r}
+# Forward selection with updated logistic regression model
+logit2 <- glm(Approval ~ patentType + businessType + ApplicationTime, data=patentsNew, family='binomial')
+summary(logit2)
+```
+```{r}
+tbl_regression(logit2, exponentiate = TRUE)
+```
+
+
+
+
+# Figure 2: Checking Assumptions of Regression
+
+check 3 assumptions, i.e. normality, homoscedasticity, and multicollinearity.
+```{r}
+# normality
+hist(logit2$residuals)
+```
+
+```{r}
+# Checking assumptions 
+plot(logit2)
+```
+
+```{r}
+# Multicollinearity VIF all under 5 
+kable(VIF(logit2))
+```
+
 
 ```{r}
 # Split the data into training and test set
-set.seed(123)
-training.samples <- patentsNew$Approved %>% 
-    createDataPartition(p = 0.8, list = FALSE)
-
-train.data  <- patentsNew$Approved[training.samples,]
-test.data <- patentsNew$Approved[-training.samples,]
+set.seed(1)
+index <- sample(x=nrow(patentsNew), size=0.70*nrow(patentsNew))
+train.data  <- patentsNew[index,]
+test.data <- patentsNew[-index,]
 ```
 
 ```{r}
+#Fitting training logistic regression model
+logitTrain <- glm(Approval ~ patentType + firstInventorIndicator + businessType, data= train.data, family='binomial')
 
-patentLog <- patentsNew[, c('patentType', 'businessType', 'firstInventorIndicator', 'Approved')]
-# Fit the model
-model <- glm(Approved ~., data = patentLog, family = binomial) 
-
-summary(model)
-```
-
-
-```{r}
-# Predict the probability (p) of diabete positivity
-probabilities <- predict(model, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, "pos", "neg")
-head(predicted.classes)
+# confusion matrix
+prediction <- predict(logitTrain, type='response', newdata=test.data)
+probability <- ifelse(probability < 0.50, '1','0')
+test.data2 = test.data[8]
+matrix <- kable(test.data2$Approval, prediction)
 
 
-# Select only numeric predictors
-mydata <- patentsNew %>%
-  dplyr::select_if(is.numeric) 
-predictors <- colnames(mydata)
-# Bind the logit and tidying the data for plot
-mydata <- mydata %>%
-  mutate(logit = log(probabilities/(1-probabilities))) %>%
-  gather(key = "predictors", value = "predictor.value", -logit)
 
-ggplot(mydata, aes(logit, predictor.value))+
-  geom_point(size = 0.5, alpha = 0.5) +
-  geom_smooth(method = "loess") + 
-  theme_bw() + 
-  facet_wrap(~predictors, scales = "free_y")
-
-plot(model, which = 4, id.n = 3)
-```
-```{r}
-library(car)
-vif(model)
+#computing error rate against test data set
+error <-  1- ((matrix[1] + matrix[2,2]) / (sum(matrix) ) )
+cat("The error rate for 70% Training vs 30% testing split is: ", error)
 ```
